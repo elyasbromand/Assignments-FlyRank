@@ -2,12 +2,14 @@ import express from 'express';
 
 const app = express();
 
+app.use(express.json());
+
 const port = 3000;
 
 var tasks = [
-    {"id": 1, "title": "Journal Writing", "status": "false"},
-    {"id": 2, "title": "Exercise", "status": "true"},
-    {"id": 3, "title": "Read a book", "status": "false"},
+    {"id": 1, "title": "Journal Writing", "done": "false"},
+    {"id": 2, "title": "Exercise", "done": "true"},
+    {"id": 3, "title": "Read a book", "done": "false"},
 ]
 
 app.get("/", (req, res) => {
@@ -15,7 +17,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-    res.json({"status": "ok"});
+    res.json({"done": "ok"});
 });
 
 app.get("/tasks", (req, res) => {
@@ -30,11 +32,27 @@ app.get("/tasks/:id", (req, res) => {
     {
         res.json(task);
     }
-    else
-    {
-        res.status(404).json({"error": `Task ${taskId} not found`});    
-    }
+    res.status(404).json({"error": `Task ${taskId} not found`});    
+    
 });
+
+app.post("/tasks", (req, res) =>{
+    const {title} = req.body;
+    if(!title || title.trim() === "")
+    {
+        res.status(400).json({"error": "Title is required"});
+    }
+
+    const newTask = {
+        id: tasks.length + 1,
+        title: title,
+        done: "false"
+    };
+
+    tasks.push(newTask);
+
+    res.json(newTask);
+})
 
 app.listen(port, () =>{
     console.log(`Server is running on port ${port}`);
