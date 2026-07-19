@@ -136,7 +136,12 @@ to explore and test the API through the interactive Swagger UI.
 - Data is stored in memory and resets whenever the server restarts.
 - No database is required.
 - Built for learning REST APIs and Swagger/OpenAPI documentation.
+- ai-version folder contains the code in which the same task is done completely by AI
 
+## AI VS ME
+
+While AI is better at documenting swagger APIs and validating input fields, my code has better status codes and user experience.
+ 
 ---
 
 ## Author
