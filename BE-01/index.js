@@ -104,7 +104,7 @@ app.get("/health", (req, res) => {
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/TaskInput'
+ *             $ref: '#/components/schemas/TaskCreateInput'
  *     responses:
  *       201:
  *         description: Task created successfully
@@ -120,7 +120,7 @@ app.get("/tasks", (req, res) => {
 });
 
 app.post("/tasks", (req, res) => {
-  const { title, done = false } = req.body;
+  const { title } = req.body;
 
   if (!title || title.trim() === "") {
     return res.status(400).json({ error: "Title is required" });
@@ -129,7 +129,7 @@ app.post("/tasks", (req, res) => {
   const newTask = {
     id: tasks.length + 1,
     title,
-    done,
+    done: false,
   };
 
   tasks.push(newTask);
@@ -172,7 +172,7 @@ app.post("/tasks", (req, res) => {
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/TaskInput'
+ *             $ref: '#/components/schemas/TaskUpdateInput'
  *     responses:
  *       200:
  *         description: Task updated successfully
@@ -260,9 +260,15 @@ app.delete("/tasks/:id", (req, res) => {
  *         done:
  *           type: boolean
  *           example: false
- *     TaskInput:
+ *     TaskCreateInput:
  *       type: object
  *       required: [title]
+ *       properties:
+ *         title:
+ *           type: string
+ *           example: Journal Writing
+ *     TaskUpdateInput:
+ *       type: object
  *       properties:
  *         title:
  *           type: string
