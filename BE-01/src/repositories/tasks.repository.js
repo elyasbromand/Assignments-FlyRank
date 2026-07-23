@@ -59,24 +59,34 @@ function getTaskById(id) {
 function createTask(title) {
   const insert = db.prepare("INSERT INTO tasks (title, done) VALUES (?, ?)");
   const info = insert.run(title, 0);
-  if(info.changes === 0) {
-  return null;
-  } 
+  if (info.changes === 0) {
+    return null;
+  }
   return getTaskById(info.lastInsertRowid);
 }
 
 function updateTask(id, changes) {
-  const task = tasks.find((task) => task.id === id);
-  if (!task) return null;
-  Object.assign(task, changes);
-  return task;
+  const current = getTaskById(id);
+  if (!current) {
+    return null;
+  }
+
+  const nextTitle = changes.title !== undefined ? changes.title : current.title;
+  const nextDone =
+    changes.done !== undefined ? (changes.done ? 1 : 0) : current.done ? 1 : 0;
+
+  db.prepare("UPDATE tasks SET title = ?, done = ? WHERE id = ?").run(
+    nextTitle,
+    nextDone,
+    id,
+  );
+
+  return getTaskById(id);
 }
 
 function deleteTask(id) {
-  const index = tasks.findIndex((task) => task.id === id);
-  if (index === -1) return false;
-  tasks.splice(index, 1);
-  return true;
+  const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
+  return result.changes > 0;
 }
 
 initializeDatabase();
