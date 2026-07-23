@@ -1,4 +1,4 @@
-import { NotFoundError, ValidationError } from "../errors";
+import { NotFoundError, ValidationError } from "../errors.js";
 
 export default function errorHandler(err, req, res, next) {
   if (err instanceof NotFoundError) {

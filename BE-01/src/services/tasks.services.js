@@ -4,8 +4,8 @@ import {
   updateTask,
   deleteTask,
   createTask,
-} from "../repositories/tasks.repository";
-import { NotFoundError, ValidationError } from "../errors";
+} from "../repositories/tasks.repository.js";
+import { NotFoundError, ValidationError } from "../errors.js";
 
 function listTasks() {
   try {
