@@ -57,14 +57,12 @@ function getTaskById(id) {
 }
 
 function createTask(title) {
-  const newTask = {
-    id: tasks.length === 0 ? 1 : Math.max(...tasks.map((t) => t.id)) + 1,
-    title,
-    done: false,
-  };
-
-  tasks.push(newTask);
-  return newTask;
+  const insert = db.prepare("INSERT INTO tasks (title, done) VALUES (?, ?)");
+  const info = insert.run(title, 0);
+  if(info.changes === 0) {
+  return null;
+  } 
+  return getTaskById(info.lastInsertRowid);
 }
 
 function updateTask(id, changes) {
