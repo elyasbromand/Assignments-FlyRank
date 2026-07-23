@@ -6,6 +6,7 @@ const sampleTasks = [
   { id: 3, title: "Test CRUD routes", done: true },
 ];
 
+// mapTask is a safe function to shape the response, so that we don't expose the internal db schema
 function mapTask(row) {
   return {
     id: row.id,
@@ -42,11 +43,17 @@ function initializeDatabase() {
 }
 
 function getAllTasks() {
-  return tasks;
+  const rows = db
+    .prepare("SELECT id, title, done FROM tasks ORDER BY id")
+    .all();
+  return rows.map(mapTask);
 }
 
 function getTaskById(id) {
-  return tasks.find((task) => task.id === id);
+  const row = db
+    .prepare("SELECT id, title, done FROM tasks WHERE id = ?")
+    .get(id);
+  return row ? mapTask(row) : null;
 }
 
 function createTask(title) {
