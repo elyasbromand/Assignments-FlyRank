@@ -1,4 +1,4 @@
-import { NotFoundError, ValidationError } from "../errors.js";
+import { NotFoundError, ValidationError, AuthenticationError } from "../errors.js";
 
 // We don't call Next() here because this is the last middleware in the chain. 
 export default function errorHandler(err, req, res, next) {
@@ -10,6 +10,9 @@ export default function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: err.message });
   }
 
+  if (err instanceof AuthenticationError) {
+    return res.status(401).json({error: err.message});
+  }
   // Fallback: log and return 500
   console.error(err);
   return res.status(500).json({ error: "Internal Server Error" });
