@@ -1,5 +1,6 @@
 import { NotFoundError, ValidationError } from "../errors.js";
 
+// We don't call Next() here because this is the last middleware in the chain. 
 export default function errorHandler(err, req, res, next) {
   if (err instanceof NotFoundError) {
     return res.status(404).json({ error: err.message });
