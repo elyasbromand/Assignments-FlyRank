@@ -22,7 +22,7 @@ async function signUp(body) {
         console.log(data);
         return data.user;
     } catch (error) {
-        throw new Error(error);
+        throw error;
     }
 }
 
@@ -50,4 +50,17 @@ async function login(body) {
     }
 }
 
-export {signUp, login};
+async function logout() {
+    try {
+        const { error } = await supabase.auth.signOut()
+        if(error) {
+            throw new Error("Failed to signout");
+        }
+        return true;
+    } catch(error) {
+        console.log(error);
+        throw error;
+    }
+}
+
+export {signUp, login, logout};
