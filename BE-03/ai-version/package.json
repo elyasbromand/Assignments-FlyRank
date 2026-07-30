@@ -1,0 +1,17 @@
+{
+  "name": "flyrank-ai-version",
+  "version": "1.0.0",
+  "description": "Express backend with Supabase authentication",
+  "license": "ISC",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  }
+}
