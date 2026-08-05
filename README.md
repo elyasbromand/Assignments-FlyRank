@@ -19,4 +19,5 @@ Each folder is an independent project.
 
 | Folder | Topic | Description |
 |---------|-------|-------------|
-| BE-01 | Express API | REST API basics with Swagger UI |
+| BE-01 (BE-02 + BE-04) | Express API | REST API with Swagger UI and Postgres with Docker  |
+| BE-03 | Supabase Auth | Supabase based Registeration and login and Access control | 
