@@ -1,24 +1,11 @@
-# Scraper — Target Classification
+## Target classification
 
-A polite, focused web scraper for the **Target Classification** assignment. It collects book data from the `Travel`, `Mystery`, and `Historical Fiction` sections of [`books.toscrape.com`](https://books.toscrape.com/) — a sandbox site that explicitly permits scraping and is purpose-built for testing crawlers.
-
----
-
-## Why `books.toscrape.com`?
-
-This site was designed to be scraped: it allows automated access, provides a stable and predictable structure, and exposes no rate-limiting or legal barriers. It is therefore an appropriate target for an assignment scraper that must fetch resources politely and without overburdening a live service.
-
----
-
-## Target Sections
-
-The scraper is scoped to three book sections (a.k.a. "target classes"):
-
-- **Travel**
-- **Mystery**
-- **Historical Fiction**
-
-Each section is scraped individually so that books can later be grouped and classified by section.
+- **Site: https://books.toscrape.com/** 
+- **Why this site is appropriate to scrape: Since this website was designed to be scraped and it gives literal approval for it.** 
+- **Scope: First 3 catalogue pages** 
+- **robots.txt result: Not found** 
+- **Data collected: title, url, price, availability, rating, description, source page, fetched at** 
+- **Ethics statement: I will not reuse this code on another site without checking its rules and terms first.** 
 
 ---
 
