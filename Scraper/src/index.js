@@ -2,9 +2,15 @@
 import { writeFile, readFile, mkdir } from "fs/promises";
 import path from "path";
 import { existsSync } from "fs";
+import * as cheerio from "cheerio";
 
 const USER_AGENT = "FlyRankInternshipA9/1.0 (+https://github.com/elyasbromand/Assignments-FlyRank)";
 const TIMEOUT_MS = 8000;
+const MIN_DELAY_MS = 500;
+
+async function sleep(ms = MIN_DELAY_MS) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 async function fetchWithCache(url, cachePath) {
   if (existsSync(cachePath)) {
@@ -29,6 +35,8 @@ async function fetchWithCache(url, cachePath) {
 
   const html = await response.text();
 
+  await sleep(MIN_DELAY_MS);
+
   const dir = path.dirname(cachePath);
   await mkdir(dir, { recursive: true });
   await writeFile(cachePath, html);
@@ -38,9 +46,43 @@ async function fetchWithCache(url, cachePath) {
   return html;
 }
 
-async function main() {
-  const url = "https://books.toscrape.com/catalogue/page-1.html";
-  const html = await fetchWithCache(url, "cache/catalogue-page-1.html");
+async function getCatalogueBookUrls(pageUrl, pageNum) {
+  const cachePath = `cache/catalogue-page-${pageNum}.html`;
+  const html = await fetchWithCache(pageUrl, cachePath);
+  const $ = cheerio.load(html);
+
+  const bookUrls = $("article.product_pod h3 a")
+    .map((_, el) => new URL($(el).attr("href"), pageUrl).toString())
+    .get();
+
+  const nextRel = $("li.next a").attr("href");
+  const nextUrl = nextRel ? new URL(nextRel, pageUrl).toString() : null;
+
+  return { bookUrls, nextUrl };
 }
+
+async function discoverAllCatalogueUrls() {
+  const startUrl = "https://books.toscrape.com/catalogue/page-1.html";
+  let currentUrl = startUrl;
+  let pageNum = 1;
+  const allBookUrls = [];
+
+  while (currentUrl && pageNum <= 3) {
+    const { bookUrls, nextUrl } = await getCatalogueBookUrls(currentUrl, pageNum);
+    allBookUrls.push(...bookUrls);
+    currentUrl = nextUrl;
+    pageNum++;
+  }
+
+  const uniqueBookUrls = [...new Set(allBookUrls)];
+
+  console.log(`catalogue_pages=${pageNum - 1} discovered=${uniqueBookUrls.length} unique_urls=${uniqueBookUrls.length}`);
+  return uniqueBookUrls;
+}
+
+async function main() {
+  const bookUrls = await discoverAllCatalogueUrls();
+}
+
 
 main();
