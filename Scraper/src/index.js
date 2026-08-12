@@ -10,15 +10,17 @@ const USER_AGENT =
 const TIMEOUT_MS = 8000;
 const MIN_DELAY_MS = 500;
 
+const stats = { pagesFetched: 0, cacheHits: 0 };
+
 const BookSchema = z.object({
   title: z.string().min(1),
-  product_url: z.string().url(),
+  product_url: z.url(),
   price_text: z.string(),
   price_gbp: z.number().positive(),
   availability_text: z.string(),
   rating_text: z.string(),
   description: z.string().nullable(),
-  source_page: z.string().url(),
+  source_page: z.url(),
   fetched_at: z.string(),
 });
 
@@ -50,9 +52,10 @@ async function sleep(ms = MIN_DELAY_MS) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithCache(url, cachePath) {
+async function fetchWithCache(url, cachePath, attempt = 1) {
   if (existsSync(cachePath)) {
     const html = await readFile(cachePath, "utf-8");
+    stats.cacheHits++;
     console.log(`CACHE HIT ${url} (size=${html.length} bytes)`);
     return html;
   }
@@ -60,16 +63,43 @@ async function fetchWithCache(url, cachePath) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  const response = await fetch(url, {
-    headers: { "User-Agent": USER_AGENT },
-    signal: controller.signal,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    // Timeout or network failure — retry once if we haven't already
+    if (attempt < 2) {
+      await sleep(MIN_DELAY_MS);
+      return fetchWithCache(url, cachePath, attempt + 1);
+    }
+    throw new Error(`Network error after ${attempt} attempt(s): ${err.message}`);
+  }
 
   clearTimeout(timeoutId);
+
+  // 403 / 404 — never retry, throw immediately
+  if (response.status === 404) {
+    throw new Error(`Not found (404): ${url}`);
+  }
+  if (response.status === 403) {
+    throw new Error(`Forbidden (403): ${url}`);
+  }
+
+  // 5xx on first attempt — retry once
+  if (response.status >= 500 && attempt === 1) {
+    await sleep(MIN_DELAY_MS);
+    return fetchWithCache(url, cachePath, attempt + 1);
+  }
 
   if (response.status !== 200) {
     throw new Error(`Failed to fetch ${url}: status ${response.status}`);
   }
+
+  stats.pagesFetched++;
 
   const html = await response.text();
 
@@ -168,19 +198,29 @@ async function extractBookRecord(bookUrl, sourcePage, indexInList) {
 }
 
 async function main() {
+  const startTime = new Date();
+
   const entries = await discoverAllCatalogueUrls();
 
-  const records = [];
-  for (let i = 0; i < entries.length; i++) {    
-    const record = await extractBookRecord(entries[i].url, entries[i].sourcePage, i);
-    records.push(record);
+  const rawRecords = [];
+  const failedPages = [];
+
+
+  for (let i = 0; i < entries.length; i++) {
+    try {
+      const record = await extractBookRecord(entries[i].url, entries[i].sourcePage, i);
+      rawRecords.push(record);
+    } catch (err) {
+      failedPages.push({ url: entries[i].url, reason: err.message });
+      console.log(`SKIP ${entries[i].url}: ${err.message}`);
+    }
   }
 
-  console.log(`Extracted ${records.length} book records`);
+  console.log(`Extracted ${rawRecords.length} book records (${failedPages.length} failed)`);
   // Normalize and validate
   const good = [];
   const bad = [];
-  for (const record of records) {
+  for (const record of rawRecords) {
     const { ok, record: normalized, reason } = normalizeAndValidate(record);
     if (ok) {
       good.push(normalized);
@@ -200,7 +240,20 @@ async function main() {
   await writeFile("output/books.json", JSON.stringify(deduped, null, 2));
   await writeFile("output/errors.json", JSON.stringify(bad, null, 2));
 
-  console.log(`Valid: ${deduped.length}, Errors: ${bad.length}`);
+  const endTime = new Date();
+  const runReport = {
+    start_time: startTime.toISOString(),
+    duration_ms: endTime - startTime,
+    pages_fetched: stats.pagesFetched,
+    cache_hits: stats.cacheHits,
+    valid_records: deduped.length,
+    invalid_records: bad.length,
+    failed_pages: failedPages.length,
+  };
+  await writeFile("output/run-report.json", JSON.stringify(runReport, null, 2));
+
+  console.log(`Valid: ${deduped.length}, Errors: ${bad.length}, Failed pages: ${failedPages.length}`);
+  console.log("Run report written to output/run-report.json");
 }
 
 main();
