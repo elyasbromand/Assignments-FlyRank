@@ -3,11 +3,48 @@ import { writeFile, readFile, mkdir } from "fs/promises";
 import path from "path";
 import { existsSync } from "fs";
 import * as cheerio from "cheerio";
+import { z } from "zod";
 
 const USER_AGENT =
   "FlyRankInternshipA9/1.0 (+https://github.com/elyasbromand/Assignments-FlyRank)";
 const TIMEOUT_MS = 8000;
 const MIN_DELAY_MS = 500;
+
+const BookSchema = z.object({
+  title: z.string().min(1),
+  product_url: z.string().url(),
+  price_text: z.string(),
+  price_gbp: z.number().positive(),
+  availability_text: z.string(),
+  rating_text: z.string(),
+  description: z.string().nullable(),
+  source_page: z.string().url(),
+  fetched_at: z.string(),
+});
+
+function parsePriceGBP(priceText) {
+  const cleaned = priceText.replace(/[^\d.]/g, "");
+  const price = Number(cleaned);
+  return isFinite(price) ? price : null;
+}
+
+function normalizeAndValidate(rawRecord) {
+  const price_gbp = parsePriceGBP(rawRecord.price_text);
+
+  const candidate = { ...rawRecord, price_gbp };
+
+  const result = BookSchema.safeParse(candidate);
+
+  if (result.success) {
+    return { ok: true, record: result.data };
+  } else {
+    return {
+      ok: false,
+      record: rawRecord,
+      reason: result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    };
+  }
+}
 
 async function sleep(ms = MIN_DELAY_MS) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,11 +177,30 @@ async function main() {
   }
 
   console.log(`Extracted ${records.length} book records`);
-  if (records.length > 0) {
-    console.log("Sample record:", JSON.stringify(records[0], null, 2));
-    console.log("Sample record:", JSON.stringify(records[20], null, 2));
-    console.log("Sample record:", JSON.stringify(records[40], null, 2));
+  // Normalize and validate
+  const good = [];
+  const bad = [];
+  for (const record of records) {
+    const { ok, record: normalized, reason } = normalizeAndValidate(record);
+    if (ok) {
+      good.push(normalized);
+    } else {
+      bad.push({ ...record, reason });
+    }
   }
+
+  // Dedup by product_url (later record overwrites)
+  const seen = new Map();
+  for (const record of good) {
+    seen.set(record.product_url, record);
+  }
+  const deduped = [...seen.values()];
+
+  await mkdir("output", { recursive: true });
+  await writeFile("output/books.json", JSON.stringify(deduped, null, 2));
+  await writeFile("output/errors.json", JSON.stringify(bad, null, 2));
+
+  console.log(`Valid: ${deduped.length}, Errors: ${bad.length}`);
 }
 
 main();
