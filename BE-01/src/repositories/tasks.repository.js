@@ -41,8 +41,22 @@ async function initializeDatabase() {
     }
   }
 }
+async function getAllTasks() {
+  const { rows } = await pool.query(
+    "SELECT id, title, done FROM tasks ORDER BY id"
+  );
+  return rows.map(mapTask);
+}
+
+async function getTaskById(id) {
+  const { rows } = await pool.query(
+    "SELECT id, title, done FROM tasks WHERE id = $1",
+    [id]
+  );
+  return rows.length > 0 ? mapTask(rows[0]) : null;
+}
 
 
 
 await initializeDatabase();
-// export { getAllTasks, getTaskById, createTask, updateTask, deleteTask };
+export { getAllTasks, getTaskById, };
