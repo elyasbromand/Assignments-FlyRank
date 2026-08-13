@@ -9,46 +9,46 @@ import {
 
 const router = express.Router();
 
-router.get("/", (req, res, next) => {
+router.get("/", async (req, res, next) => {
   try {
-    const data = listTasks();
+    const data = await listTasks();
     res.json(data);
   } catch (err) {
     next(err);
   }
 });
 
-router.post("/", (req, res, next) => {
+router.post("/", async (req, res, next) => {
   try {
     const { title } = req.body;
-    const created = createNewTask(title);
+    const created = await createNewTask(title);
     res.status(201).json(created);
   } catch (err) {
     next(err);
   }
 });
 
-router.get("/:id", (req, res, next) => {
+router.get("/:id", async (req, res, next) => {
   try {
-    const task = getTask(req.params.id);
+    const task = await getTask(req.params.id);
     res.json(task);
   } catch (err) {
     next(err);
   }
 });
 
-router.put("/:id", (req, res, next) => {
+router.put("/:id", async (req, res, next) => {
   try {
-    const updated = updateExistingTask(req.params.id, req.body);
+    const updated = await updateExistingTask(req.params.id, req.body);
     res.json(updated);
   } catch (err) {
     next(err);
   }
 });
 
-router.delete("/:id", (req, res, next) => {
+router.delete("/:id", async (req, res, next) => {
   try {
-    deleteExistingTask(req.params.id);
+    await deleteExistingTask(req.params.id);
     res.status(204).send();
   } catch (err) {
     next(err);

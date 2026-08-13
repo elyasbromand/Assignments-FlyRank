@@ -7,22 +7,22 @@ import {
 } from "../repositories/tasks.repository.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 
-function listTasks() {
+async function listTasks() {
   try {
-    return getAllTasks();
+    return await getAllTasks();
   } catch (err) {
     throw err;
   }
 }
 
-function getTask(id) {
+async function getTask(id) {
   try {
     const taskId = Number.parseInt(id, 10);
     if (Number.isNaN(taskId)) {
       throw new ValidationError("Invalid id");
     }
 
-    const task = getTaskById(taskId);
+    const task = await getTaskById(taskId);
     if (!task) {
       throw new NotFoundError(`Task ${taskId} not found`);
     }
@@ -32,26 +32,26 @@ function getTask(id) {
   }
 }
 
-function createNewTask(title) {
+async function createNewTask(title) {
   try {
     if (!title || typeof title !== "string" || title.trim() === "") {
       throw new ValidationError("Title is required");
     }
 
-    return createTask(title.trim());
+    return await createTask(title.trim());
   } catch (err) {
     throw err;
   }
 }
 
-function updateExistingTask(id, changes) {
+async function updateExistingTask(id, changes) {
   try {
     const taskId = Number.parseInt(id, 10);
     if (Number.isNaN(taskId)) {
       throw new ValidationError("Invalid id");
     }
 
-    const task = getTaskById(taskId);
+    const task = await getTaskById(taskId);
     if (!task) {
       throw new NotFoundError(`Task ${taskId} not found`);
     }
@@ -67,20 +67,20 @@ function updateExistingTask(id, changes) {
       changes.done = Boolean(changes.done);
     }
 
-    return updateTask(taskId, changes);
+    return await updateTask(taskId, changes);
   } catch (err) {
     throw err;
   }
 }
 
-function deleteExistingTask(id) {
+async function deleteExistingTask(id) {
   try {
     const taskId = Number.parseInt(id, 10);
     if (Number.isNaN(taskId)) {
       throw new ValidationError("Invalid id");
     }
 
-    const deleted = deleteTask(taskId);
+    const deleted = await deleteTask(taskId);
     if (!deleted) {
       throw new NotFoundError(`Task ${taskId} not found`);
     }

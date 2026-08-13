@@ -1,7 +1,15 @@
-import Database from "better-sqlite3";
+import { configDotenv } from "dotenv";
+import { Pool } from "pg";
+configDotenv();
 
-const db = new Database("tasks.db", { verbose: console.log("Database connected")});
+const connectionString = process.env.DATABASE_URL;
 
-db.pragma("journal_mode = WAL");
+const pool = new Pool({
+  connectionString,
+});
 
-export default db;
+pool.on("connect", () => {
+  console.log("Database connected");
+});
+
+export default pool;
