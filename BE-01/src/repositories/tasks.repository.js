@@ -23,27 +23,26 @@ async function initializeDatabase() {
     )
   `);
 
-  const { rowCount } = await pool.query(
-    "SELECT COUNT(*) AS count FROM tasks"
-  );
+  const { rows } = await pool.query("SELECT COUNT(*)::int AS count FROM tasks");
+  const taskCount = Number(rows[0]?.count ?? 0);
 
-  if (rowCount === 0) {
-    const insert = await pool.query(
-      "INSERT INTO tasks (title, done) VALUES ($1, $2) RETURNING *",
-      [sampleTasks[0].title, sampleTasks[0].done ? true : false]
+  if (taskCount === 0) {
+    const valuesSql = sampleTasks
+      .map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`)
+      .join(", ");
+
+    const params = sampleTasks.flatMap((task) => [task.title, task.done]);
+
+    await pool.query(
+      `INSERT INTO tasks (title, done) VALUES ${valuesSql}`,
+      params,
     );
-
-    for (const task of sampleTasks) {
-      await pool.query(
-        "INSERT INTO tasks (title, done) VALUES ($1, $2)",
-        [task.title, task.done]
-      );
-    }
   }
 }
+
 async function getAllTasks() {
   const { rows } = await pool.query(
-    "SELECT id, title, done FROM tasks ORDER BY id"
+    "SELECT id, title, done FROM tasks ORDER BY id",
   );
   return rows.map(mapTask);
 }
@@ -51,7 +50,7 @@ async function getAllTasks() {
 async function getTaskById(id) {
   const { rows } = await pool.query(
     "SELECT id, title, done FROM tasks WHERE id = $1",
-    [id]
+    [id],
   );
   return rows.length > 0 ? mapTask(rows[0]) : null;
 }
@@ -59,7 +58,7 @@ async function getTaskById(id) {
 async function createTask(title) {
   const { rows } = await pool.query(
     "INSERT INTO tasks (title, done) VALUES ($1, $2) RETURNING *",
-    [title, false]
+    [title, false],
   );
   return mapTask(rows[0]);
 }
@@ -71,24 +70,28 @@ async function updateTask(id, changes) {
   }
 
   const nextTitle = changes.title !== undefined ? changes.title : current.title;
-  const nextDone =
-    changes.done !== undefined ? changes.done : current.done;
+  const nextDone = changes.done !== undefined ? changes.done : current.done;
 
   const { rows } = await pool.query(
     "UPDATE tasks SET title = $1, done = $2 WHERE id = $3 RETURNING *",
-    [nextTitle, nextDone, id]
+    [nextTitle, nextDone, id],
   );
 
   return mapTask(rows[0]);
 }
 
 async function deleteTask(id) {
-  const { rowCount } = await pool.query(
-    "DELETE FROM tasks WHERE id = $1",
-    [id]
-  );
+  const { rowCount } = await pool.query("DELETE FROM tasks WHERE id = $1", [
+    id,
+  ]);
   return rowCount > 0;
 }
 
-await initializeDatabase();
-export { getAllTasks, getTaskById, createTask, updateTask, deleteTask };
+export {
+  initializeDatabase,
+  getAllTasks,
+  getTaskById,
+  createTask,
+  updateTask,
+  deleteTask,
+};
