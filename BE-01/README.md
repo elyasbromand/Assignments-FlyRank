@@ -1,185 +1,155 @@
-# BE-01 + BE-02
+# FlyRank BE-01 Task API
 
-# ToDo Express API with Swagger
+## What this is
 
-A simple RESTful CRUD API built with **Express.js** and documented using **Swagger (OpenAPI 3.1)**. The project follows a three-layer architecture (Routes → Services → Repositories) and persists data using a file-based SQLite database (`better-sqlite3`). It demonstrates API development, request validation, and interactive API documentation.
+This project is a small Express.js REST API for managing a task list. It follows a clean three-layer design:
 
----
+- Routes handle the HTTP requests
+- Services contain the business logic
+- Repositories talk to PostgreSQL
 
-## Features
-
-- CRUD operations for tasks
-- Express.js REST API
-- Swagger UI documentation
-- OpenAPI 3.1 specification
-- JSON request/response format
-- SQLite file-based data storage (`better-sqlite3`)
+The app is containerized with Docker Compose and includes Swagger for API exploration.
 
 ---
 
-## Tech Stack
+## Run everything
 
-- Node.js
-- Express.js
-- Swagger UI Express
-- Swagger JSDoc
-- SQLite (`better-sqlite3`)
-
----
-
-## Getting Started
-
-### 1. Clone the repository
+From the project root, clone it and start the stack with one command:
 
 ```bash
-git clone https://github.com/elyasbromand/Assignments-FlyRank.git
-cd Assignments-FlyRank/BE-01
+git clone <repo-url>
+cd BE-01
+docker compose up
 ```
 
-### 2. Install dependencies
+This starts:
 
-```bash
-npm install
-```
+- the PostgreSQL database container
+- the API container
 
-### 3. Start the server
+Once it is running, the app is available at:
 
-```bash
-npm start
-# or
-node index.js
-```
-
-The server will start on:
-
-```
+```text
 http://localhost:3000
 ```
 
-Swagger documentation is available at:
+Swagger is available at:
 
-```
+```text
 http://localhost:3000/docs
 ```
 
 ---
 
-## Project Structure (high level)
+## Environment variables
 
-```
-BE-01/
-  index.js            # app entry
-  package.json
-  src/
-    app.js
-    db/
-      database.js     # SQLite connector (better-sqlite3)
-    middleware/
-      errorHandler.js
-    repositories/
-      tasks.repository.js
-    routes/
-      tasks.router.js
-    services/
-      tasks.services.js
+Use the sample file at `.env.example` as the reference for required variables.
+
+```bash
+cp .env.example .env
 ```
 
-This follows a three-layer architecture:
-- Routes: HTTP layer and request validation
-- Services: Business logic
-- Repositories: Data access (SQLite)
+Then update the values in `.env` to match your local setup.
+
+Example:
+
+```env
+DATABASE_URL=postgres://username:password@localhost:5432/database_name
+```
+
+For the Docker Compose setup, the app already uses:
+
+```env
+DATABASE_URL=postgres://postgres:dev@db:5432/tasks
+```
 
 ---
 
-## API Endpoints
+## API endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET    | `/` | API information |
-| GET    | `/health` | Health check |
-| GET    | `/tasks` | Get all tasks |
-| GET    | `/tasks/:id` | Get a task by ID |
-| POST   | `/tasks` | Create a new task |
-| PUT    | `/tasks/:id` | Update a task |
+| GET | `/` | API information |
+| GET | `/health` | Health check |
+| GET | `/tasks` | Get all tasks |
+| GET | `/tasks/:id` | Get one task by ID |
+| POST | `/tasks` | Create a new task |
+| PUT | `/tasks/:id` | Update an existing task |
 | DELETE | `/tasks/:id` | Delete a task |
 
 ---
 
-## Example Request
-
-Create a task
+## Example request
 
 ```bash
 curl -i \
   -X POST http://localhost:3000/tasks \
   -H "Content-Type: application/json" \
-  -d '{"title":"Learn Swagger"}'
+  -d '{"title":"Learn Docker Compose"}'
 ```
 
-### Example Response
+Example response:
 
 ```http
 HTTP/1.1 201 Created
-X-Powered-By: Express
 Content-Type: application/json; charset=utf-8
-Content-Length: 45
 
 {
-  "id": 4,
-  "title": "Learn Swagger",
+  "id": 1,
+  "title": "Learn Docker Compose",
   "done": false
 }
 ```
 
 ---
 
-## Available Commands
+## Database view
 
-- `npm install` : Install project dependencies
-- `npm start` or `node index.js` : Start the API server
+Inspect the database from Docker with:
+
+```bash
+docker compose exec db psql -U postgres -d tasks -c "\dt"
+docker compose exec db psql -U postgres -d tasks -c "SELECT * FROM tasks ORDER BY id;"
+```
+
+### Database look
+
+![Database screenshot](./db_screenshot.png)
 
 ---
 
-## Swagger Documentation
+## Project structure
 
-Once the server is running, open:
-
-```
-http://localhost:3000/docs
-```
-
-to explore and test the API through the interactive Swagger UI.
-
-## Database
-
-- The app uses `better-sqlite3` to persist tasks to a local file named `tasks.db`.
-- The `tasks.db` file is created automatically in the project root when the server starts.
-- To clear all data, stop the server and delete `tasks.db` from the project root.
-
-## Run with a fresh clone
-
-To run the project from a fresh clone:
-
-```bash
-git clone https://github.com/elyasbromand/Assignments-FlyRank.git
-cd Assignments-FlyRank/BE-01
-npm install
-npm start
+```text
+BE-01/
+├── compose.yaml
+├── Dockerfile
+├── .env.example
+├── index.js
+├── package.json
+├── openapi.json
+├── src/
+│   ├── app.js
+│   ├── db/
+│   │   └── database.js
+│   ├── middleware/
+│   │   └── errorHandler.js
+│   ├── repositories/
+│   │   └── tasks.repository.js
+│   ├── routes/
+│   │   └── tasks.router.js
+│   └── services/
+│       └── tasks.services.js
+└── README.md
 ```
 
-Notes:
-- The project is authored as ES modules (`type: "module"` in `package.json`). Use Node 18+.
-- `tasks.db` is created automatically on first run; no separate migration step is required.
+---
 
 ## Notes
 
-- Data is persisted to `tasks.db` (SQLite) and will survive restarts unless the file is removed.
-- Built for learning REST APIs and Swagger/OpenAPI documentation.
-- The `ai-version` folder contains the code the author created using an AI tool for comparison.
-
-## AI VS ME
-
-While AI is better at documenting Swagger APIs and validating input fields, my code has better status codes and user experience.
+- The app is designed for local development and learning.
+- PostgreSQL is created and initialized automatically when the containers start.
+- The `ai-version` folder contains a comparison implementation created with AI assistance.
 
 ---
 
