@@ -8,7 +8,10 @@ import { z } from "zod";
 const USER_AGENT =
   "FlyRankInternshipA9/1.0 (+https://github.com/elyasbromand/Assignments-FlyRank)";
 const TIMEOUT_MS = 8000;
-const MIN_DELAY_MS = 500;
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+const JITTER_FACTOR = 0.3; 
+const POLITE_DELAY_MS = 500;
 
 const stats = { pagesFetched: 0, cacheHits: 0 };
 
@@ -48,8 +51,37 @@ function normalizeAndValidate(rawRecord) {
   }
 }
 
-async function sleep(ms = MIN_DELAY_MS) {
+async function sleep(ms = POLITE_DELAY_MS ) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function computeBackoffDelay(attempt) {
+  const exponential = BASE_DELAY_MS * 2 ** (attempt - 1);
+  const jitter = exponential * Math.random() * JITTER_FACTOR;
+  return exponential + jitter;
+}
+
+function parseRetryAfter(response) {
+  const header = response.headers.get("retry-after");
+  if (!header) return null;
+
+  const seconds = Number(header);
+  if (!isNaN(seconds)) {
+    return seconds * 1000;
+  }
+
+  const date = new Date(header);
+  if (!isNaN(date.valueOf())) {
+    return date - Date.now();
+  }
+
+  return null;
+}
+
+function logAttempt({ url, status, attempt, delayMs }) {
+  console.log(
+    JSON.stringify({ event: "retry", url, status, attempt, delay_ms: delayMs }),
+  );
 }
 
 async function fetchWithCache(url, cachePath, attempt = 1) {
@@ -71,17 +103,17 @@ async function fetchWithCache(url, cachePath, attempt = 1) {
     });
   } catch (err) {
     clearTimeout(timeoutId);
-    // Timeout or network failure — retry once if we haven't already
-    if (attempt < 2) {
-      await sleep(MIN_DELAY_MS);
+    if (attempt < MAX_RETRIES) {
+      const delayMs = computeBackoffDelay(attempt);
+      logAttempt({ url, status: "network_error", attempt, delayMs });
+      await sleep(delayMs);
       return fetchWithCache(url, cachePath, attempt + 1);
     }
     throw new Error(`Network error after ${attempt} attempt(s): ${err.message}`);
   }
-
   clearTimeout(timeoutId);
 
-  // 403 / 404 — never retry, throw immediately
+  // Never retry these � unchanged from Stage 5
   if (response.status === 404) {
     throw new Error(`Not found (404): ${url}`);
   }
@@ -89,10 +121,19 @@ async function fetchWithCache(url, cachePath, attempt = 1) {
     throw new Error(`Forbidden (403): ${url}`);
   }
 
-  // 5xx on first attempt — retry once
-  if (response.status >= 500 && attempt === 1) {
-    await sleep(MIN_DELAY_MS);
-    return fetchWithCache(url, cachePath, attempt + 1);
+  // 429 or 5xx � retryable
+  if (response.status === 429 || response.status >= 500) {
+    const retryAfterMs = parseRetryAfter(response);
+    const delayMs = retryAfterMs !== null ? retryAfterMs : computeBackoffDelay(attempt);
+
+    if (attempt < MAX_RETRIES) {
+      logAttempt({ url, status: response.status, attempt, delayMs });
+      await sleep(delayMs);
+      return fetchWithCache(url, cachePath, attempt + 1);
+    }
+    throw new Error(
+      `${response.status} after ${attempt} attempt(s): ${url}`,
+    );
   }
 
   if (response.status !== 200) {
@@ -103,7 +144,7 @@ async function fetchWithCache(url, cachePath, attempt = 1) {
 
   const html = await response.text();
 
-  await sleep(MIN_DELAY_MS);
+  await sleep();
 
   const dir = path.dirname(cachePath);
   await mkdir(dir, { recursive: true });
@@ -196,7 +237,6 @@ async function extractBookRecord(bookUrl, sourcePage, indexInList) {
     fetched_at: new Date().toISOString(),
   };
 }
-
 async function main() {
   const startTime = new Date();
 

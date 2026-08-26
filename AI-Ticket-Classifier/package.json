@@ -1,0 +1,17 @@
+{
+  "name": "ai-ticket-classifier",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "Elyas Bromand",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "openai": "^7.5.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {}
+}
