@@ -1,8 +1,6 @@
 import express from "express";
 import ticketsRouter from "./src/routes/tickets.js";
-import { configDotenv } from "dotenv";
 
-configDotenv();
 
 const app = express();
 const PORT = 3000;

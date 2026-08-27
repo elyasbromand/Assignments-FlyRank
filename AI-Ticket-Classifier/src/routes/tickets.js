@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ticketInputSchema } from "../llm/schema.js";
 import { ticketClassificationSchema } from "../llm/schema.js";
+import { classifyTicket } from "../llm/client.js";
 
 const router = Router();
 
@@ -28,7 +29,8 @@ router.post("/", async (req, res) => {
     return res.status(200).json(stub);
   }
 
-  res.status(501).json({ error: "not implemented yet" });
+  const raw = await classifyTicket(parsed.data.text);
+  return res.status(200).json({ raw });
 });
 
 export default router;
