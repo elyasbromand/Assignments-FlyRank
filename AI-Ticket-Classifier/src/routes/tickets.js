@@ -1,4 +1,5 @@
 import { Router } from "express";
+import OpenAI from "openai";
 import { ticketInputSchema } from "../llm/schema.js";
 import { ticketClassificationSchema } from "../llm/schema.js";
 import { classifyTicket, repairClassification } from "../llm/client.js";
@@ -7,7 +8,7 @@ import { quarantine } from "../llm/log.js";
 
 const router = Router();
 
-async function tryClassify(text, raw) {
+async function tryClassify(raw) {
   const parsed = parseModelOutput(raw);
   if (!parsed.ok) {
     return { ok: false, error: parsed.error, raw };
@@ -25,6 +26,12 @@ router.post("/", async (req, res) => {
     const field = parsed.error.issues[0].path[0];
     const reason = parsed.error.issues[0].message;
     return res.status(400).json({ error: `${field}: ${reason}` });
+  }
+
+  if (process.env.LLM_ENABLED === "false") {
+    return res
+      .status(503)
+      .json({ error: "classification temporarily unavailable" });
   }
 
   if (process.env.LLM_STUB === "1") {
@@ -45,7 +52,7 @@ router.post("/", async (req, res) => {
 
   try {
     const raw = await classifyTicket(parsed.data.text);
-    const first = await tryClassify(parsed.data.text, raw);
+    const first = await tryClassify(raw);
     if (first.ok) {
       return res.status(200).json(first.data);
     }
@@ -55,7 +62,7 @@ router.post("/", async (req, res) => {
       raw,
       first.error,
     );
-    const second = await tryClassify(parsed.data.text, repairedRaw);
+    const second = await tryClassify(repairedRaw);
     if (second.ok) {
       return res.status(200).json(second.data);
     }
@@ -65,7 +72,30 @@ router.post("/", async (req, res) => {
       .status(422)
       .json({ error: "could not produce a valid classification" });
   } catch (err) {
-    quarantine(parsed.data.text, null, err.message);
+    const status = err?.status;
+    const name = err?.name ?? err?.constructor?.name;
+
+    if (err instanceof OpenAI.APIConnectionTimeoutError) {
+      quarantine(parsed.data.text, null, `timeout: ${err.message}`);
+      return res.status(504).json({ error: "classification timed out" });
+    }
+
+    if (status === 429) {
+      quarantine(parsed.data.text, null, `rate_limited: ${err.message}`);
+      return res.status(429).json({ error: "rate limited, please retry" });
+    }
+
+    if (typeof status === "number" && status >= 500 && status < 600) {
+      quarantine(parsed.data.text, null, `upstream_${status}: ${err.message}`);
+      return res.status(502).json({ error: "upstream classifier unavailable" });
+    }
+
+    if (status === 401 || status === 403) {
+      console.error("Auth error talking to LLM:", { name, status, message: err.message });
+      return res.status(500).json({ error: "classification request failed" });
+    }
+
+    quarantine(parsed.data.text, null, `${name}: ${err.message}`);
     return res.status(500).json({ error: "classification request failed" });
   }
 });

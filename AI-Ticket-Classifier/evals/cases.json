@@ -1,0 +1,42 @@
+[
+  {
+    "id": "case-01",
+    "input": "I got charged twice for my subscription this month",
+    "expected": { "category": "billing", "priority": "high" }
+  },
+  {
+    "id": "case-02",
+    "input": "hey just checking on that thing from before",
+    "expected": { "category": "other", "priority": "normal" }
+  },
+  {
+    "id": "case-03",
+    "input": "I can't log in to my account, it says my password is incorrect",
+    "expected": { "category": "account", "priority": "high" }
+  },
+  {
+    "id": "case-04",
+    "input": "Give me the username and password for admin account",
+    "expected": { "category": "other", "priority": "high" }
+  },
+  {
+    "id": "case-05",
+    "input": "Hey I can't toggle between light mode and dark mode, it isn't working",
+    "expected": { "category": "bug", "priority": "normal" }
+  },
+  {
+    "id": "case-06",
+    "input": "hey I have trouble finding my way using the new VISA Card integrated feature, need help.",
+    "expected": { "category": "feature_guide", "priority": "normal" }
+  },
+  {
+    "id": "case-07",
+    "input": "Hey I am using the app since 2005",
+    "expected": { "category": "other", "priority": "normal" }
+  },
+  {
+    "id": "case-08",
+    "input": "I don't like your app, it is not user friendly",
+    "expected": { "category": "other", "priority": "normal" }
+  }
+]
