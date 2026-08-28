@@ -5,16 +5,17 @@ import path from "path";
 import { configDotenv } from "dotenv";
 
 configDotenv();
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const client = new OpenAI({
-    baseURL: process.env.LLM_BASE_URL,
-    apiKey: process.env.OPEN_ROUTER_API_KEY,
+  baseURL: process.env.LLM_BASE_URL,
+  apiKey: process.env.LLM_API_KEY,
 });
 
 const systemPrompt = readFileSync(
   path.join(__dirname, "../../prompts/ticket-classifier-v1.md"),
-  "utf-8"
+  "utf-8",
 );
 
 export async function classifyTicket(ticketText) {
@@ -27,5 +28,30 @@ export async function classifyTicket(ticketText) {
     ],
   });
 
+  return res.choices[0].message.content;
+}
+
+export async function repairClassification(
+  ticketText,
+  brokenOutput,
+  validationError,
+) {
+  const res = await client.chat.completions.create({
+    model: process.env.LLM_MODEL,
+    temperature: 0,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify({ text: ticketText }) },
+      { role: "assistant", content: brokenOutput },
+      {
+        role: "user",
+        content: JSON.stringify({
+          error: validationError,
+          instruction:
+            "The previous answer was rejected. Please provide ONLY corrected JSON.",
+        }),
+      },
+    ],
+  });
   return res.choices[0].message.content;
 }

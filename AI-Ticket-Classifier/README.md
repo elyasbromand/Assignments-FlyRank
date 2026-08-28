@@ -43,3 +43,6 @@ curl -X POST http://localhost:3000/tickets \
 ```
 
 Expected: `400` with the `text` field named in the error.
+
+
+During Stage 3 testing, the free model once returned non-JSON output ("User Safety: safe") instead of a refusal or valid response — likely an internal moderation path on the provider's end. The pipeline caught it via the parse step, attempted a repair, and quarantined cleanly without crashing — effectively validating the 'handle a refusal' case for free.
