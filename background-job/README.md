@@ -35,6 +35,7 @@ a missing production signing key.
 | GET | `/health` | Liveness check — returns `{ status: "ok" }` |
 | POST | `/reports` | Accepts `{ topic }`, returns `202` + `{ id, status: "pending" }` instantly. Missing/empty `topic` → `400`, no job created. |
 | GET | `/reports/:id` | Returns the stored report: `pending` → `done` (with result) or `failed` (with error). Unknown id → `404`. |
+| Event function | `say-hello` | Stage 1 sanity check — triggered by `test/hello`, sleeps 5s via `step.sleep`, returns `"Hello from the background!"`. Not part of the report flow; confirms the Inngest wiring works before building on it. |
 | Event function | `make-report` | Triggered by `report/requested`. Sleeps 8s (stand-in for slow work), then builds the report. `topic: "fail"` throws deliberately to demonstrate retries (`retries: 2`); `onFailure` marks the report `failed` once retries are exhausted. |
 | Cron function | `heartbeat` | Triggered on schedule `* * * * *` (every minute). Logs a summary line of how many reports are `pending`, `done`, and `failed`. No endpoint, no event — the clock is the only trigger. |
 
