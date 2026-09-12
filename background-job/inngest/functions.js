@@ -17,7 +17,20 @@ export const sayHello = inngest.createFunction(
 // - triggered by event: "report/requested"
 // - event.data will contain { id, topic }
 export const makeReport = inngest.createFunction(
-  { id: "make-report", triggers: [{ event: "report/requested" }], retries: 2 },
+  {
+    id: "make-report",
+    triggers: [{ event: "report/requested" }],
+    retries: 2,
+    onFailure: async ({ event, error, step }) => {
+      const originalEvent = event.data.event;
+      const { id, topic } = originalEvent.data;
+
+      await step.run("log-failure", async () => {
+        const entry = reports.get(id);
+        reports.set(id, { ...entry, status: "failed", error: error.message });
+      });
+    },
+  },
   async ({ event, step }) => {
     const { id, topic } = event.data;
     await step.sleep("do-the-slow-work", 8000);
@@ -36,6 +49,21 @@ export const makeReport = inngest.createFunction(
       const entry = reports.get(id);
 
       reports.set(id, { ...entry, status: "done", result });
+    });
+  },
+);
+
+// FUNCTION: "heartbeat"
+// - triggered by a cron schedule, not an event
+// - runs every minute, logs one summary line, touches no endpoint
+export const heartbeat = inngest.createFunction(
+  { id: "heartbeat", triggers: [{ cron: "* * * * *" }] },
+  async ({ step }) => {
+    await step.run("log-summary", async () => {
+        const pendingCount = Array.from(reports.values()).filter(report => report.status === "pending").length;
+        const doneCount = Array.from(reports.values()).filter(report => report.status === "done").length;
+        const failedCount = Array.from(reports.values()).filter(report => report.status === "failed").length;
+        console.log(`Heartbeat: ${pendingCount} pending, ${doneCount} done, ${failedCount} failed`);
     });
   },
 );
