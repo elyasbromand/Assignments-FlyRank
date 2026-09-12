@@ -1,6 +1,6 @@
 import express from "express";
 import { inngest } from "./inngest/client.js";
-import { sayHello, makeReport  } from "./inngest/functions.js";
+import { sayHello, makeReport } from "./inngest/functions.js";
 import { serve } from "inngest/express";
 import { randomUUID } from "crypto";
 import { reports } from "./data/store.js";
@@ -10,11 +10,17 @@ app.use(express.json());
 
 const PORT = 3000;
 
-app.use("/api/inngest", serve({ client: inngest, functions: [ sayHello, makeReport ] }));
+app.use(
+  "/api/inngest",
+  serve({ client: inngest, functions: [sayHello, makeReport] }),
+);
 
 app.post("/reports", async (req, res) => {
   const { topic } = req.body;
 
+  if (!topic || topic.trim() === "") {
+    return res.status(400).json({ error: "Missing or empty topic" });
+  }
   // TODO: generate an id with randomUUID()
   const id = randomUUID();
   // TODO: save { id, topic, status: "pending" } into `reports`
@@ -32,7 +38,7 @@ app.get("/reports/:id", (req, res) => {
   // TODO: look up reports.get(req.params.id)
   const report = reports.get(req.params.id);
   // TODO: if missing -> 404
-  if(!report) {
+  if (!report) {
     res.status(404).json({ error: "Report not found" });
   } else {
     res.status(200).json(report);
