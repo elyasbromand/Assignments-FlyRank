@@ -1,4 +1,5 @@
 import { inngest } from "./client.js";
+import { reports } from "../data/store.js";
 
 // FUNCTION: "say-hello"
 // - triggered by event: "test/hello"
@@ -9,5 +10,27 @@ export const sayHello = inngest.createFunction(
   async ({ event, step }) => {
     await step.sleep("wait-5-seconds", 5000);
     return "Hello from the background!";
-  }
+  },
+);
+
+// FUNCTION: "make-report"
+// - triggered by event: "report/requested"
+// - event.data will contain { id, topic }
+export const makeReport = inngest.createFunction(
+  { id: "make-report", triggers: [{ event: "report/requested" }] },
+  async ({ event, step }) => {
+    const { id, topic } = event.data;
+    await step.sleep("do-the-slow-work", 8000);
+
+    // step.run("build-report", async () => { ... })
+    // - build some kind of result object (up to you — a fake summary is fine)
+    // - fetch the existing entry from `reports` by id
+    // - update it with { ...entry, status: "done", result }
+    // - save it back into the map
+    await step.run("build-report", async () => {
+      const result = { summary: `This is a report on ${topic}` };
+      const entry = reports.get(id);
+      reports.set(id, { ...entry, status: "done", result });
+    });
+  },
 );
