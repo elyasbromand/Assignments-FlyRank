@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -12,10 +12,12 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Save, FolderOpen, Download, Upload, Trash2 } from "lucide-react";
+import { Save, FolderOpen, Download, Upload, Trash2, ScrollText, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -24,11 +26,28 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from "@/components/ui/sheet";
 import { DecisionNode } from "./DecisionNode";
 import { StartNode } from "./StartNode";
 import { OutcomeNode } from "./OutcomeNode";
 import { DecisionEdge } from "./edges/DecisionEdge";
 import { saveWorkflow, listWorkflows, loadWorkflow, deleteWorkflow } from "@/lib/workflow-storage";
+import { addHistoryEntry, listHistory, clearHistory } from "@/lib/run-history";
+
+const TERMINAL_STATUSES = ["Completed", "Failed", "Cancelled"];
+const POLL_INTERVAL_MS = 1200;
+const POLL_TIMEOUT_MS = 30_000;
+const REPLAY_RUNNING_MS = 450; // how long a node shows "running" before settling
+const REPLAY_SETTLE_MS = 250; // pause after settling before advancing to the next node
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nodeTypes = {
   start: StartNode,
@@ -68,13 +87,15 @@ function sanitizeNodes(nodes) {
   }));
 }
 
-// sanitizeNodes strips the onPromptChange callback before saving (it's a
-// function, not serializable) — this puts it back on load/import so
-// decision node textareas stay editable.
-function rehydrateNodes(nodes, onPromptChange) {
-  return nodes.map((n) =>
-    n.type === "decision" ? { ...n, data: { ...n.data, onPromptChange } } : n,
-  );
+// sanitizeNodes strips the onPromptChange/onLabelChange callbacks before
+// saving (functions aren't serializable) — this puts them back on
+// load/import so node inputs stay editable.
+function rehydrateNodes(nodes, { onPromptChange, onLabelChange }) {
+  return nodes.map((n) => {
+    if (n.type === "decision") return { ...n, data: { ...n.data, onPromptChange } };
+    if (n.type === "outcome") return { ...n, data: { ...n.data, onLabelChange } };
+    return n;
+  });
 }
 
 function Flow() {
@@ -88,6 +109,44 @@ function Flow() {
   const [savedWorkflows, setSavedWorkflows] = useState([]);
   const importInputRef = useRef(null);
 
+  const [runResult, setRunResult] = useState(null); // { status, outcome?, trace?, error?, failedNodeId? }
+  const pollRef = useRef(null);
+
+  const [execStatus, setExecStatus] = useState({}); // { [nodeId]: "running" | "success" | "fail" }
+
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [expandedIds, setExpandedIds] = useState(new Set());
+
+  // Every terminal run result (success, workflow failure, network/timeout
+  // failure) goes through here so it's recorded to history exactly once,
+  // with the newest entry auto-expanded in the logs panel.
+  const recordResult = useCallback((data) => {
+    setRunResult(data);
+    const updated = addHistoryEntry(data);
+    setHistory(updated);
+    setExpandedIds(updated[0] ? new Set([updated[0].id]) : new Set());
+  }, []);
+
+  const toggleExpanded = (id) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const openLogsDialog = () => {
+    setHistory(listHistory());
+    setLogsOpen(true);
+  };
+
+  const handleClearHistory = () => {
+    clearHistory();
+    setHistory([]);
+    setExpandedIds(new Set());
+  };
+
   const updateNodePrompt = useCallback(
     (id, prompt) => {
       setNodes((nds) =>
@@ -99,14 +158,25 @@ function Flow() {
     [setNodes],
   );
 
+  const updateNodeLabel = useCallback(
+    (id, label) => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === id ? { ...n, data: { ...n.data, label } } : n,
+        ),
+      );
+    },
+    [setNodes],
+  );
+
   const loadGraph = useCallback(
     ({ nodes: loadedNodes, edges: loadedEdges }) => {
-      const hydrated = rehydrateNodes(loadedNodes, updateNodePrompt);
+      const hydrated = rehydrateNodes(loadedNodes, { onPromptChange: updateNodePrompt, onLabelChange: updateNodeLabel });
       syncIdCounter(hydrated);
       setNodes(hydrated);
       setEdges(loadedEdges);
     },
-    [setNodes, setEdges, updateNodePrompt],
+    [setNodes, setEdges, updateNodePrompt, updateNodeLabel],
   );
 
   const handleSaveConfirm = () => {
@@ -163,8 +233,33 @@ function Flow() {
     }
   };
 
+  const pollStatus = useCallback((eventId) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const startedAt = Date.now();
+
+    pollRef.current = setInterval(async () => {
+      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+        clearInterval(pollRef.current);
+        recordResult({ status: "Failed", error: "Timed out waiting for a result" });
+        setRunning(false);
+        return;
+      }
+
+      const res = await fetch(`/api/workflow/status/${eventId}`);
+      const data = await res.json();
+
+      if (TERMINAL_STATUSES.includes(data.status)) {
+        clearInterval(pollRef.current);
+        recordResult(data);
+        setRunning(false);
+      }
+    }, POLL_INTERVAL_MS);
+  }, [recordResult]);
+
   const handleRun = async () => {
     setRunning(true);
+    setRunResult(null);
+    setExecStatus({});
     try {
       const res = await fetch("/api/workflow/run", {
         method: "POST",
@@ -172,11 +267,56 @@ function Flow() {
         body: JSON.stringify({ nodes: sanitizeNodes(nodes), edges }),
       });
       const data = await res.json();
-      console.log("Queued:", data); // Phase 4 replaces this with a real logs panel
-    } finally {
+      if (!res.ok) throw new Error(data.error || "Failed to queue workflow");
+      pollStatus(data.eventId);
+    } catch (err) {
+      recordResult({ status: "Failed", error: err.message });
       setRunning(false);
     }
   };
+
+  // Replays the finished run's trace onto the canvas one node at a time —
+  // we only get the final trace from polling (Option A), not live per-step
+  // updates, so this recreates the "watch it execute" feel after the fact.
+  useEffect(() => {
+    if (!runResult?.trace) return;
+    let cancelled = false;
+
+    const play = async () => {
+      const startNode = nodes.find((n) => n.type === "start");
+      if (startNode) setExecStatus((s) => ({ ...s, [startNode.id]: "success" }));
+
+      for (const entry of runResult.trace) {
+        if (cancelled) return;
+        const isFailedNode = runResult.status === "Failed" && entry.nodeId === runResult.failedNodeId;
+
+        setExecStatus((s) => ({ ...s, [entry.nodeId]: "running" }));
+        await sleep(REPLAY_RUNNING_MS);
+        if (cancelled) return;
+
+        setExecStatus((s) => ({ ...s, [entry.nodeId]: isFailedNode ? "fail" : "success" }));
+        await sleep(REPLAY_SETTLE_MS);
+      }
+
+      // Traversal errors that happen before reaching a node (e.g. an edge
+      // pointing at a node id that doesn't exist) leave failedNodeId out of
+      // the trace entirely — mark it directly so the failure is still visible.
+      if (
+        !cancelled &&
+        runResult.status === "Failed" &&
+        runResult.failedNodeId &&
+        !runResult.trace.some((t) => t.nodeId === runResult.failedNodeId)
+      ) {
+        setExecStatus((s) => ({ ...s, [runResult.failedNodeId]: "fail" }));
+      }
+    };
+
+    play();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- replay only when a new result arrives, not on every nodes/setExecStatus identity change
+  }, [runResult]);
 
   const onConnect = useCallback(
     (connection) => {
@@ -223,16 +363,43 @@ function Flow() {
         id,
         type: "outcome",
         position: { x: 640 + Math.random() * 80, y: 80 + Math.random() * 240 },
-        data: { label: "Outcome" },
+        data: { label: "Outcome", onLabelChange: updateNodeLabel },
       },
     ]);
   };
 
+  // Execution state is kept separate from `nodes`/`edges` (the editable,
+  // saveable graph) and merged in only for rendering, so Save/Export never
+  // pick up transient run state and dragging/editing never has to know
+  // about it either.
+  const activeEdgeKeys = useMemo(() => {
+    if (!runResult?.trace) return null;
+    const startNode = nodes.find((n) => n.type === "start");
+    const keys = new Set(startNode ? [`${startNode.id}:default`] : []);
+    for (const entry of runResult.trace) {
+      if (entry.type === "decision") keys.add(`${entry.nodeId}:${entry.answer}`);
+    }
+    return keys;
+  }, [runResult, nodes]);
+
+  const displayNodes = useMemo(
+    () => nodes.map((n) => ({ ...n, data: { ...n.data, execStatus: execStatus[n.id] } })),
+    [nodes, execStatus],
+  );
+
+  const displayEdges = useMemo(() => {
+    if (!activeEdgeKeys) return edges;
+    return edges.map((e) => {
+      const active = activeEdgeKeys.has(`${e.source}:${e.sourceHandle || "default"}`);
+      return { ...e, animated: active, data: { ...e.data, active } };
+    });
+  }, [edges, activeEdgeKeys]);
+
   return (
     <div style={{ height: "100vh", width: "100%" }}>
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={displayNodes}
+        edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -257,6 +424,22 @@ function Flow() {
             disabled={running}
           >
             {running ? "Running..." : "▶ Run Workflow"}
+          </Button>
+
+          {runResult?.status === "Completed" && (
+            <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+              ✓ {runResult.outcome ?? "No outcome reached"}
+            </Badge>
+          )}
+          {(runResult?.status === "Failed" || runResult?.status === "Cancelled") && (
+            <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+              ✕ {runResult.error ?? runResult.status}
+            </Badge>
+          )}
+
+          <Button size="sm" variant="outline" onClick={openLogsDialog}>
+            <ScrollText /> Logs
+            {history.length > 0 && <Badge variant="outline">{history.length}</Badge>}
           </Button>
 
           <Separator orientation="vertical" className="h-6" />
@@ -361,6 +544,112 @@ function Flow() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Sheet open={logsOpen} onOpenChange={setLogsOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Execution logs</SheetTitle>
+            <SheetDescription>
+              Newest run first. Click a run to see its step-by-step trace.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="-mx-4 flex-1 overflow-y-auto px-4">
+            {history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No runs yet — hit Run Workflow to see logs here.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {history.map((entry) => {
+                  const isExpanded = expandedIds.has(entry.id);
+                  const ok = entry.status === "Completed";
+                  return (
+                    <div key={entry.id} className="rounded-lg border border-border">
+                      <button
+                        onClick={() => toggleExpanded(entry.id)}
+                        className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Badge
+                            className={
+                              ok
+                                ? "bg-green-100 text-green-700 hover:bg-green-100"
+                                : "bg-red-100 text-red-700 hover:bg-red-100"
+                            }
+                          >
+                            {ok ? "✓" : "✕"}
+                          </Badge>
+                          <span className="truncate text-sm font-medium">
+                            {ok ? (entry.outcome ?? "No outcome reached") : entry.error}
+                          </span>
+                        </div>
+                        <ChevronDown
+                          className={cn(
+                            "size-4 shrink-0 text-muted-foreground transition-transform",
+                            isExpanded && "rotate-180",
+                          )}
+                        />
+                      </button>
+                      <div className="px-2.5 pb-2 text-xs text-muted-foreground">
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </div>
+
+                      {isExpanded && (
+                        <div className="flex flex-col gap-2 border-t border-border px-2.5 py-2">
+                          {entry.trace.length === 0 && (
+                            <p className="text-xs text-muted-foreground">No steps recorded.</p>
+                          )}
+                          {entry.trace.map((step, i) =>
+                            step.type === "decision" ? (
+                              <div key={i} className="flex flex-col gap-0.5 text-xs">
+                                <span className="font-medium text-slate-700">{step.nodeId}</span>
+                                <span className="text-slate-500">&ldquo;{step.prompt}&rdquo;</span>
+                                <span
+                                  className={
+                                    step.answer === "yes"
+                                      ? "font-semibold text-green-600"
+                                      : "font-semibold text-red-600"
+                                  }
+                                >
+                                  → {step.answer.toUpperCase()}
+                                  {step.nodeId === entry.failedNodeId && " (failed here)"}
+                                </span>
+                              </div>
+                            ) : (
+                              <div key={i} className="text-xs font-medium text-purple-700">
+                                → Outcome: {step.label}
+                              </div>
+                            ),
+                          )}
+                          {entry.status === "Failed" &&
+                            entry.failedNodeId &&
+                            !entry.trace.some((t) => t.nodeId === entry.failedNodeId) && (
+                              <div className="text-xs text-red-600">
+                                Failed at {entry.failedNodeId}: {entry.error}
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <SheetFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearHistory}
+              disabled={history.length === 0}
+            >
+              <Trash2 /> Clear history
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

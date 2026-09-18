@@ -11,10 +11,24 @@ export function DecisionEdge({
   });
 
   const color = COLORS[data?.branch] || "#94a3b8";
+  // data.active is undefined until a run completes (normal look), then
+  // true for the path actually taken and false for the rest (dimmed).
+  const isDimmed = data?.active === false;
+  const isActive = data?.active === true;
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={{ stroke: color, strokeWidth: 2 }} />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          stroke: color,
+          strokeWidth: isActive ? 3 : 2,
+          opacity: isDimmed ? 0.25 : 1,
+          transition: "opacity 200ms, stroke-width 200ms",
+        }}
+      />
       {data?.branch && (
         <EdgeLabelRenderer>
           <div

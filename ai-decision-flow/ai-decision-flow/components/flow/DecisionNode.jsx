@@ -2,10 +2,17 @@
 import { Handle, Position } from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { execStatusRingClass } from "./exec-status";
 
 export function DecisionNode({ id, data }) {
   return (
-    <div className="relative w-64 rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div
+      className={cn(
+        "relative w-64 rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow",
+        execStatusRingClass(data.execStatus),
+      )}
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
         <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">Decision</Badge>
         <span className="text-[10px] text-slate-400">{id}</span>

@@ -55,29 +55,38 @@ export const runWorkflow = inngest.createFunction(
     let currentId = edgeMap[`${startNode.id}:default`];
     let hops = 0;
 
-    while (currentId) {
-      if (++hops > MAX_HOPS) throw new Error("Max hops exceeded — check for a cycle in the graph");
+    // A thrown error here (bad graph shape, or the LLM step exhausting its
+    // own retries) would otherwise propagate out of the function, discard
+    // `trace`, and cause Inngest to keep retrying a traversal that can never
+    // succeed. Catching it lets us return the partial trace plus which node
+    // failed, so the UI can show exactly where execution stopped.
+    try {
+      while (currentId) {
+        if (++hops > MAX_HOPS) throw new Error("Max hops exceeded — check for a cycle in the graph");
 
-      const node = nodeById[currentId];
-      if (!node) throw new Error(`Node ${currentId} referenced by an edge but not found`);
+        const node = nodeById[currentId];
+        if (!node) throw new Error(`Node ${currentId} referenced by an edge but not found`);
 
-      if (node.type === "outcome") {
-        trace.push({ nodeId: node.id, type: "outcome", label: node.data.label });
-        return { outcome: node.data.label, trace };
+        if (node.type === "outcome") {
+          trace.push({ nodeId: node.id, type: "outcome", label: node.data.label });
+          return { outcome: node.data.label, trace };
+        }
+
+        if (node.type !== "decision") {
+          throw new Error(`Unsupported node type mid-traversal: ${node.type}`);
+        }
+
+        const answer = await step.run(`decide-${node.id}`, () => askYesNo(node.data.prompt));
+        trace.push({ nodeId: node.id, type: "decision", prompt: node.data.prompt, answer });
+
+        const nextId = edgeMap[`${node.id}:${answer}`];
+        if (!nextId) throw new Error(`Decision node ${node.id} has no "${answer}" edge`);
+        currentId = nextId;
       }
 
-      if (node.type !== "decision") {
-        throw new Error(`Unsupported node type mid-traversal: ${node.type}`);
-      }
-
-      const answer = await step.run(`decide-${node.id}`, () => askYesNo(node.data.prompt));
-      trace.push({ nodeId: node.id, type: "decision", prompt: node.data.prompt, answer });
-
-      const nextId = edgeMap[`${node.id}:${answer}`];
-      if (!nextId) throw new Error(`Decision node ${node.id} has no "${answer}" edge`);
-      currentId = nextId;
+      return { outcome: null, trace }; // dead-ended without hitting an outcome node
+    } catch (err) {
+      return { outcome: null, trace, error: err.message, failedNodeId: currentId };
     }
-
-    return { outcome: null, trace }; // dead-ended without hitting an outcome node
   }
 );
