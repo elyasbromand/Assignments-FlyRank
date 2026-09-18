@@ -1,0 +1,46 @@
+"use client";
+import { Handle, Position } from "@xyflow/react";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+
+export function DecisionNode({ id, data }) {
+  return (
+    <div className="relative w-64 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+        <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">Decision</Badge>
+        <span className="text-[10px] text-slate-400">{id}</span>
+      </div>
+
+      <div className="p-3">
+        <Textarea
+          value={data.prompt || ""}
+          onChange={(e) => data.onPromptChange?.(id, e.target.value)}
+          placeholder="e.g. Is this a support request?"
+          className="min-h-[70px] text-sm resize-none nodrag"
+        />
+      </div>
+
+      <Handle type="target" position={Position.Left} className="!bg-slate-400" />
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="yes"
+        style={{ top: "35%", background: "#22c55e", width: 10, height: 10 }}
+      />
+      <span className="absolute right-[-32px] top-[29%] text-[10px] font-semibold text-green-600">
+        YES
+      </span>
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="no"
+        style={{ top: "70%", background: "#ef4444", width: 10, height: 10 }}
+      />
+      <span className="absolute right-[-28px] top-[64%] text-[10px] font-semibold text-red-600">
+        NO
+      </span>
+    </div>
+  );
+}
