@@ -10,9 +10,10 @@ import {
   useNodesState,
   useEdgesState,
   ReactFlowProvider,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Save, FolderOpen, Download, Upload, Trash2, ScrollText, ChevronDown } from "lucide-react";
+import { Save, FolderOpen, Download, Upload, Trash2, ScrollText, ChevronDown, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -62,6 +63,7 @@ const initialNodes = [
     type: "start",
     position: { x: 50, y: 150 },
     data: { label: "Start" },
+    deletable: false, // exactly one start node must always exist — the traversal logic requires it
   },
 ];
 
@@ -87,18 +89,23 @@ function sanitizeNodes(nodes) {
   }));
 }
 
-// sanitizeNodes strips the onPromptChange/onLabelChange callbacks before
-// saving (functions aren't serializable) — this puts them back on
-// load/import so node inputs stay editable.
-function rehydrateNodes(nodes, { onPromptChange, onLabelChange }) {
+// sanitizeNodes strips the onPromptChange/onLabelChange/onDelete callbacks
+// before saving (functions aren't serializable) — this puts them back on
+// load/import so node inputs and delete buttons stay wired up. Also
+// re-enforces deletable: false on the start node regardless of what a
+// saved file or hand-edited import JSON actually contains — "exactly one
+// start node" is a structural invariant, not something to trust storage for.
+function rehydrateNodes(nodes, { onPromptChange, onLabelChange, onDelete }) {
   return nodes.map((n) => {
-    if (n.type === "decision") return { ...n, data: { ...n.data, onPromptChange } };
-    if (n.type === "outcome") return { ...n, data: { ...n.data, onLabelChange } };
+    if (n.type === "start") return { ...n, deletable: false };
+    if (n.type === "decision") return { ...n, data: { ...n.data, onPromptChange, onDelete } };
+    if (n.type === "outcome") return { ...n, data: { ...n.data, onLabelChange, onDelete } };
     return n;
   });
 }
 
 function Flow() {
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [running, setRunning] = useState(false);
@@ -169,14 +176,34 @@ function Flow() {
     [setNodes],
   );
 
+  // Removes a node and any edge touching it (as source or target) — React
+  // Flow's own default Backspace-to-delete already does this cascade, this
+  // is the same cleanup for the explicit delete button on each node.
+  const deleteNode = useCallback(
+    (id) => {
+      setNodes((nds) => nds.filter((n) => n.id !== id));
+      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+    },
+    [setNodes, setEdges],
+  );
+
   const loadGraph = useCallback(
     ({ nodes: loadedNodes, edges: loadedEdges }) => {
-      const hydrated = rehydrateNodes(loadedNodes, { onPromptChange: updateNodePrompt, onLabelChange: updateNodeLabel });
+      const hydrated = rehydrateNodes(loadedNodes, {
+        onPromptChange: updateNodePrompt,
+        onLabelChange: updateNodeLabel,
+        onDelete: deleteNode,
+      });
       syncIdCounter(hydrated);
       setNodes(hydrated);
       setEdges(loadedEdges);
+      // fitView only runs on ReactFlow's initial mount, not on later nodes
+      // updates — without this, a loaded/imported graph whose node
+      // positions fall outside the current viewport renders partly or
+      // fully off-screen. Deferred a frame so it reads the just-set nodes.
+      requestAnimationFrame(() => fitView({ padding: 0.2, duration: 300 }));
     },
-    [setNodes, setEdges, updateNodePrompt, updateNodeLabel],
+    [setNodes, setEdges, updateNodePrompt, updateNodeLabel, deleteNode, fitView],
   );
 
   const handleSaveConfirm = () => {
@@ -233,7 +260,12 @@ function Flow() {
     }
   };
 
-  const pollStatus = useCallback((eventId) => {
+  // priorTrace is only set on a retry: the steps from the run being retried
+  // that happened *before* the failed node, so the merged result the UI
+  // sees is the whole path (old prefix + new attempt), not just the retried
+  // tail — otherwise Step 3's edge highlighting would wrongly dim the
+  // earlier, already-successful edges as "not taken".
+  const pollStatus = useCallback((eventId, priorTrace = []) => {
     if (pollRef.current) clearInterval(pollRef.current);
     const startedAt = Date.now();
 
@@ -250,29 +282,47 @@ function Flow() {
 
       if (TERMINAL_STATUSES.includes(data.status)) {
         clearInterval(pollRef.current);
-        recordResult(data);
+        const merged = priorTrace.length
+          ? { ...data, trace: [...priorTrace, ...(data.trace ?? [])] }
+          : data;
+        recordResult(merged);
         setRunning(false);
       }
     }, POLL_INTERVAL_MS);
   }, [recordResult]);
 
-  const handleRun = async () => {
+  const handleRun = async (resumeFromNodeId) => {
+    // On a fresh run, wipe prior node highlighting. On a retry, leave it —
+    // the nodes before the failed one are still correctly "success" from
+    // last time, and re-showing them mid-retry would be misleading.
+    if (!resumeFromNodeId) setExecStatus({});
+
+    const priorTrace = resumeFromNodeId
+      ? (() => {
+          const idx = runResult?.trace?.findIndex((t) => t.nodeId === resumeFromNodeId) ?? -1;
+          return idx === -1 ? (runResult?.trace ?? []) : runResult.trace.slice(0, idx);
+        })()
+      : [];
+
     setRunning(true);
     setRunResult(null);
-    setExecStatus({});
     try {
       const res = await fetch("/api/workflow/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: sanitizeNodes(nodes), edges }),
+        body: JSON.stringify({ nodes: sanitizeNodes(nodes), edges, resumeFromNodeId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to queue workflow");
-      pollStatus(data.eventId);
+      pollStatus(data.eventId, priorTrace);
     } catch (err) {
       recordResult({ status: "Failed", error: err.message });
       setRunning(false);
     }
+  };
+
+  const handleRetry = () => {
+    if (runResult?.failedNodeId) handleRun(runResult.failedNodeId);
   };
 
   // Replays the finished run's trace onto the canvas one node at a time —
@@ -342,6 +392,18 @@ function Flow() {
     [edges, setEdges],
   );
 
+  // Spawns near the current viewport center (not a fixed canvas coordinate)
+  // so a new node is always visible where the user is already looking —
+  // on a freshly loaded canvas or after panning/zooming into one area of a
+  // larger graph, a fixed x/y can land well outside what's on screen.
+  const spawnPosition = (offsetX = 0) => {
+    const center = screenToFlowPosition({
+      x: window.innerWidth / 2 + offsetX,
+      y: window.innerHeight / 2,
+    });
+    return { x: center.x + (Math.random() - 0.5) * 80, y: center.y + (Math.random() - 0.5) * 120 };
+  };
+
   const addDecisionNode = () => {
     const id = nextId();
     setNodes((nds) => [
@@ -349,8 +411,8 @@ function Flow() {
       {
         id,
         type: "decision",
-        position: { x: 320 + Math.random() * 120, y: 80 + Math.random() * 240 },
-        data: { prompt: "", onPromptChange: updateNodePrompt },
+        position: spawnPosition(),
+        data: { prompt: "", onPromptChange: updateNodePrompt, onDelete: deleteNode },
       },
     ]);
   };
@@ -362,8 +424,8 @@ function Flow() {
       {
         id,
         type: "outcome",
-        position: { x: 640 + Math.random() * 80, y: 80 + Math.random() * 240 },
-        data: { label: "Outcome", onLabelChange: updateNodeLabel },
+        position: spawnPosition(220),
+        data: { label: "Outcome", onLabelChange: updateNodeLabel, onDelete: deleteNode },
       },
     ]);
   };
@@ -420,7 +482,7 @@ function Flow() {
           <Button
             size="sm"
             variant="secondary"
-            onClick={handleRun}
+            onClick={() => handleRun()}
             disabled={running}
           >
             {running ? "Running..." : "▶ Run Workflow"}
@@ -435,6 +497,11 @@ function Flow() {
             <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
               ✕ {runResult.error ?? runResult.status}
             </Badge>
+          )}
+          {runResult?.status === "Failed" && runResult.failedNodeId && (
+            <Button size="sm" variant="outline" onClick={handleRetry} disabled={running}>
+              <RotateCcw /> Retry {runResult.failedNodeId}
+            </Button>
           )}
 
           <Button size="sm" variant="outline" onClick={openLogsDialog}>

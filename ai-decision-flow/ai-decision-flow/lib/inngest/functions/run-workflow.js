@@ -44,15 +44,21 @@ async function askYesNo(prompt) {
 export const runWorkflow = inngest.createFunction(
   { id: "run-workflow", triggers: { event: "workflow/run" } },
   async ({ event, step }) => {
-    const { nodes, edges } = event.data;
+    const { nodes, edges, resumeFromNodeId } = event.data;
     const nodeById = Object.fromEntries(nodes.map((n) => [n.id, n]));
     const edgeMap = buildEdgeMap(edges);
 
-    const startNode = nodes.find((n) => n.type === "start");
-    if (!startNode) throw new Error("No start node found in graph");
+    // Retrying a failed node jumps straight to it instead of re-walking the
+    // graph from Start — the traversal loop below doesn't care where it
+    // begins, it just needs a valid currentId to start from.
+    let currentId = resumeFromNodeId;
+    if (!currentId) {
+      const startNode = nodes.find((n) => n.type === "start");
+      if (!startNode) throw new Error("No start node found in graph");
+      currentId = edgeMap[`${startNode.id}:default`];
+    }
 
     const trace = [];
-    let currentId = edgeMap[`${startNode.id}:default`];
     let hops = 0;
 
     // A thrown error here (bad graph shape, or the LLM step exhausting its
