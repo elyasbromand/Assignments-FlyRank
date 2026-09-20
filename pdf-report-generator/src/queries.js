@@ -30,11 +30,20 @@ export function getReportData() {
     )
     .all();
 
+  const allBooks = db
+    .prepare(
+      `SELECT title, price, rating, url
+       FROM books
+       ORDER BY title ASC`,
+    )
+    .all();
+
   return {
     generatedAt: new Date().toISOString(),
     total,
     avgPrice,
     topExpensive,
     byRating,
+    allBooks,
   };
 }
