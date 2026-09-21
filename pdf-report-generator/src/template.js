@@ -33,8 +33,6 @@ export function buildHtml(report) {
 <head>
 <meta charset="utf-8">
 <style>
-@media screen { h1::after { content: " — SCREEN"; } }
-@media print  { h1::after { content: " — PRINT";  } }
   @page { size: A4; margin: 18mm 14mm; }
   body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
          font-size: 11pt; color: #1a1a1a; }
