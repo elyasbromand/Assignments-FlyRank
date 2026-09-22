@@ -16,8 +16,9 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS reports (
-    id         INTEGER PRIMARY KEY,
-    path       TEXT,
-    created_at TEXT NOT NULL
-  );
+  id          INTEGER PRIMARY KEY,
+  report_date TEXT NOT NULL UNIQUE,
+  path        TEXT,
+  created_at  TEXT NOT NULL
+);
 `);

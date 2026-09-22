@@ -15,8 +15,8 @@ const toJson = (r) => ({
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 app.post("/reports", async (req, res) => {
-  const report = await createReport();
-  res.status(201).json(toJson(report));
+  const { report, created } = await createReport({ force: req.body?.force === true });
+  res.status(created ? 201 : 200).json(toJson(report));
 });
 
 app.get("/reports/:id", (req, res) => {
