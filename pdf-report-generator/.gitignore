@@ -3,3 +3,6 @@ node_modules/
 !.env.example
 reports/
 report.db
+report.db-journal
+report.db-wal
+report.db-shm
